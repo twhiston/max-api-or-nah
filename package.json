@@ -1,0 +1,32 @@
+{
+  "name": "max-api-or-nah",
+  "version": "1.0.0",
+  "description": "Taking an extremely overengineered approach to wrapping the max-api object",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "generate-shim": "node ./src/generateShim.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/twhiston/max-api-or-nah.git"
+  },
+  "keywords": [
+    "cyling74",
+    "maxmsp",
+    "max",
+    "node.script"
+  ],
+  "author": "Tom Whiston",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/twhiston/max-api-or-nah/issues"
+  },
+  "homepage": "https://github.com/twhiston/max-api-or-nah#readme",
+  "devDependencies": {
+    "@babel/parser": "^7.25.6",
+    "@types/max-api": "^2.0.3",
+    "handlebars": "^4.7.8"
+  }
+}

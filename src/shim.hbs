@@ -1,0 +1,21 @@
+let Max
+
+const noMax = {
+    {{#each enums}}
+    {{>enum enum=.}}
+    {{/each}}
+
+    {{#each funcs}}
+    {{>func func=.}}
+    {{/each}}
+
+}
+
+try {
+	Max = require('max-api')
+} catch(e) {
+	Max = noMax
+    process.env.MAX_ENV = "nah"
+}
+
+module.exports = Max
