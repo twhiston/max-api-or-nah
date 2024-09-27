@@ -190,7 +190,7 @@ const template = Handlebars.compile(
 
 const render = template(filteredTemplateData);
 try {
-  fs.writeFileSync("./generatedIndex.js", render);
+  fs.writeFileSync("./index.js", render);
   // file written successfully
 } catch (err) {
   console.error(err);
