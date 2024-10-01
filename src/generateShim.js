@@ -35,12 +35,36 @@ const GetEnumValues = {
   },
 };
 
+//Called inside the function handler
+const paramHandler = {
+  TSArrayType(path){
+    console.log(path);
+  },
+  Identifier(path) {
+    //TODO does not work for base types like string
+    this.type = path.node.name;
+  },
+  TSTypeReference(path) {
+    //Type references will then go to Identifier as its the next child
+    //do we need to be explicit and get it from here instead with another handler?
+    console.log(path);
+  },
+  TSTypeParameterInstantiation(path) {
+    //if it's this type we know its something like Record<MaxFunctionSelector, MaxFunctionHandler>
+   // in this situation we need to traverse the tree specifically and scope out what we need
+   const { scope, node } = path;
+   let subP = {type: "", subParams: []}
+   scope.traverse(node, paramHandler, subP);
+   this.subParams.push(subP);
+  },
+};
+
 const GetFunctionValues = {
   TSTypeAnnotation(path) {
     if (path.key == "returnType") {
       const { scope, node } = path;
       const returnTypeHandler = {
-        Identifier(path){
+        Identifier(path) {
           this.funcData.returnType.push(path.node.name);
         },
         TSTypeAnnotation(path) {
@@ -53,6 +77,22 @@ const GetFunctionValues = {
       scope.traverse(node, returnTypeHandler, this);
     }
   },
+  TSArrayType(path){
+    //Ideally we want to do this here, but it won't work because it's
+    //at the wrong level :()
+    // console.log(path)
+    // const { scope, node } = path;
+    // let subP = {type: "", subParams: []}
+    // scope.traverse(node, paramHandler, subP);
+    // this.subParams.push(subP);
+
+      let param = { name: path.node.name, type: "", subParams: [] };
+        const { scope, node } = path;
+        scope.traverse(node, paramHandler, param);
+        this.funcData.params.push(param);
+        return;
+
+  },
   Identifier(path) {
     if (path.key == "id") {
       this.funcData.id = path.node.name;
@@ -60,28 +100,25 @@ const GetFunctionValues = {
     }
     //A param is a custom type of value
     if (path.listKey == "params") {
-      let param = { name: path.node.name, type: "" };
-      const paramHandler = {
-        Identifier(path) {
-          //TODO does not work for base types like string
-          this.type = path.node.name;
-        },
-      };
+    let param = { name: path.node.name, type: "", subParams: [] };
       const { scope, node } = path;
       scope.traverse(node, paramHandler, param);
       this.funcData.params.push(param);
       return;
     }
-    //An argument is like ...args
+    // //An argument is like ...args
     if(path.key == 'argument') {
-      let param = { name: path.node.name, type: "" };
+      let param = { name: path.node.name, type: "", subParams: [] };
+      const { scope, node } = path;
+      scope.traverse(node, paramHandler, param);
+      this.funcData.params.push(param);
     }
-  }
+  },
 };
-
 
 //Traverse the ast, using the functions above to walk the path and extract the data we need
 traverse.default(ast, {
+
   enter(path) {
     if (t.isTSEnumDeclaration(path.node)) {
       let leadingComment = joinComments(path.node.leadingComments);
@@ -106,8 +143,6 @@ traverse.default(ast, {
   },
 });
 
-console.log("Finished Traversal");
-
 function joinComments(commentArray) {
   let comment = "";
   commentArray.forEach((lc) => {
@@ -115,6 +150,8 @@ function joinComments(commentArray) {
   });
   return comment;
 }
+
+console.log("Finished Traversal");
 
 //Handle our filtered enum data as a partial
 Handlebars.registerPartial(
