@@ -1,6 +1,9 @@
 import fs from "fs";
 import Handlebars from "handlebars";
 import { parse } from "@babel/parser";
+import traverse from "@babel/traverse";
+import * as t from "@babel/types";
+import { enumStringMember } from "@babel/types";
 
 // Load our max api types
 const source = fs.readFileSync(
@@ -20,89 +23,97 @@ const ast = parse(source, {
 // because this is NOT a source file it's only a definition so we can't
 // transform it directly into code
 var filteredTemplateData = { enums: [], funcs: [] };
-ast.program.body.forEach((element) => {
-  if (element.type == "TSModuleDeclaration") {
-    element.body.body.forEach((inner) => {
-      if (inner.type == "TSEnumDeclaration") {
-        let leadingComment = inner.leadingComments[0].value;
-        let enumdata = {
-          id: inner.id.name,
-          leadingComment: leadingComment,
-          values: [],
-        };
-        inner.members.forEach((im) => {
-          let value = { id: im.id.name, value: im.initializer.value };
-          let comment = "";
-          im.leadingComments.forEach((lc) => {
-            comment += lc.value + " ";
-          });
-          value.comment = comment;
 
-          enumdata.values.push({
-            key: im.id.name,
-            value: im.initializer.value,
-          });
-        });
-        filteredTemplateData.enums.push(enumdata);
-      }
-      if (inner.type == "TSDeclareFunction") {
-        let funcdata = { id: inner.id.name };
-        let returnType = has(inner.returnType.typeAnnotation, "typeName")
-          ? inner.returnType.typeAnnotation.typeName.name
-          : inner.returnType.typeAnnotation.type;
-        funcdata.returnType = returnType;
-        let rtp = [];
-        if (has(inner.returnType.typeAnnotation, "typeParameters")) {
-          inner.returnType.typeAnnotation.typeParameters.params.forEach(
-            (element) => {
-              let subt = [];
-              if (element.type == "TSUnionType") {
-                element.types.forEach((st) => {
-                    if(st.type === "TSTypeReference"){
-                        subt.push(st.typeName.name);
-                    } else {
-                        subt.push(st.type);
-                    }
-                });
-              } else {
-                if(element.type === "TSTypeReference"){
-                    subt.push(element.typeName.name);
-                } else {
-                    subt.push(element.type);
-                }
-              }
-              rtp.push(subt);
-            }
-          );
-        }
-        funcdata.returnTypeParameters = rtp;
-        let comment = "";
-        inner.leadingComments.forEach((lc) => {
-          comment += lc.value + " ";
-        });
+const GetEnumValues = {
+  TSEnumMember(path) {
+    let value = {
+      key: path.node.id.name,
+      value: path.node.initializer.value,
+      comment: joinComments(path.node.leadingComments),
+    };
+    this.enumData.values.push(value);
+  },
+};
 
-        let params = [];
-        inner.params.forEach((param) => {
-          let typename = "";
-          typename = has(param.typeAnnotation.typeAnnotation, "typeName")
-            ? param.typeAnnotation.typeAnnotation.typeName.name
-            : param.typeAnnotation.typeAnnotation.type;
-          let pname = has(param, "name")
-            ? param.name
-            : "..." + param.argument.name;
-          comment += pname + " typeof " + typename + ", ";
-          params.push({ name: pname });
-        });
-        funcdata.comment = comment;
-        funcdata.params = params;
-        filteredTemplateData.funcs.push(funcdata);
-      }
-    });
+const GetFunctionValues = {
+  TSTypeAnnotation(path) {
+    if (path.key == "returnType") {
+      const { scope, node } = path;
+      const returnTypeHandler = {
+        Identifier(path){
+          this.funcData.returnType.push(path.node.name);
+        },
+        TSTypeAnnotation(path) {
+          this.funcData.returnType.push(path.node.type);
+        },
+        TSVoidKeyword(path) {
+          this.funcData.returnType.push(path.type);
+        },
+      };
+      scope.traverse(node, returnTypeHandler, this);
+    }
+  },
+  Identifier(path) {
+    if (path.key == "id") {
+      this.funcData.id = path.node.name;
+      return;
+    }
+    //A param is a custom type of value
+    if (path.listKey == "params") {
+      let param = { name: path.node.name, type: "" };
+      const paramHandler = {
+        Identifier(path) {
+          //TODO does not work for base types like string
+          this.type = path.node.name;
+        },
+      };
+      const { scope, node } = path;
+      scope.traverse(node, paramHandler, param);
+      this.funcData.params.push(param);
+      return;
+    }
+    //An argument is like ...args
+    if(path.key == 'argument') {
+      let param = { name: path.node.name, type: "" };
+    }
   }
+};
+
+
+//Traverse the ast, using the functions above to walk the path and extract the data we need
+traverse.default(ast, {
+  enter(path) {
+    if (t.isTSEnumDeclaration(path.node)) {
+      let leadingComment = joinComments(path.node.leadingComments);
+      let enumData = {
+        id: path.node.id.name,
+        leadingComment: leadingComment,
+        values: [],
+      };
+      path.traverse(GetEnumValues, { enumData });
+      filteredTemplateData.enums.push(enumData);
+    }
+    if (t.isTSDeclareFunction(path.node)) {
+      let funcData = {
+        id: "",
+        comment: joinComments(path.node.leadingComments),
+        params: [],
+        returnType: [],
+      };
+      path.traverse(GetFunctionValues, { funcData });
+      filteredTemplateData.funcs.push(funcData);
+    }
+  },
 });
 
-function has(object, key) {
-  return object ? hasOwnProperty.call(object, key) : false;
+console.log("Finished Traversal");
+
+function joinComments(commentArray) {
+  let comment = "";
+  commentArray.forEach((lc) => {
+    comment += lc.value + " ";
+  });
+  return comment;
 }
 
 //Handle our filtered enum data as a partial
@@ -117,8 +128,7 @@ Handlebars.registerPartial(
     },
     `
 );
-
-//addHandler: () => {},
+//Render a function definition
 Handlebars.registerPartial(
   "func",
   `
@@ -127,66 +137,74 @@ Handlebars.registerPartial(
     `
 );
 
+//TODO rejig this into a general parser for the return type array
 Handlebars.registerHelper("returnPromise", function (context, options) {
-    switch (context) {
-        case "Promise":
-            return new Handlebars.SafeString("Promise.resolve("+ options.fn(this) +")")
-            break;
-        default:
-            return new Handlebars.SafeString("{"+options.fn(this)+"}");
-            break;
-    }
+  switch (context) {
+    case "Promise":
+      return new Handlebars.SafeString(
+        "Promise.resolve(" + options.fn(this) + ")"
+      );
+      break;
+    default:
+      return new Handlebars.SafeString("{" + options.fn(this) + "}");
+      break;
+  }
 });
 
-Handlebars.registerHelper("TsTypeCommentConverter", function (context, options){
-    const findArray = ["TSArrayType", "TSStringKeyword"]
-    const replaceArray = ["array", "string"]
-    return new Handlebars.SafeString(replaceBulk(context, findArray, replaceArray))
-})
+Handlebars.registerHelper(
+  "TsTypeCommentConverter",
+  function (context, options) {
+    const findArray = ["TSArrayType", "TSStringKeyword"];
+    const replaceArray = ["array", "string"];
+    return new Handlebars.SafeString(
+      replaceBulk(context, findArray, replaceArray)
+    );
+  }
+);
 
 //https://stackoverflow.com/questions/5069464/replace-multiple-strings-at-once
-function replaceBulk( str, findArray, replaceArray ){
-    var i, regex = [], map = {};
-    for( i=0; i<findArray.length; i++ ){
-      regex.push( findArray[i].replace(/([-[\]{}()*+?.\\^$|#,])/g,'\\$1') );
-      map[findArray[i]] = replaceArray[i];
-    }
-    regex = regex.join('|');
-    str = str.replace( new RegExp( regex, 'g' ), function(matched){
-      return map[matched];
-    });
-    return str;
+function replaceBulk(str, findArray, replaceArray) {
+  var i,
+    regex = [],
+    map = {};
+  for (i = 0; i < findArray.length; i++) {
+    regex.push(findArray[i].replace(/([-[\]{}()*+?.\\^$|#,])/g, "\\$1"));
+    map[findArray[i]] = replaceArray[i];
   }
+  regex = regex.join("|");
+  str = str.replace(new RegExp(regex, "g"), function (matched) {
+    return map[matched];
+  });
+  return str;
+}
 
-Handlebars.registerHelper("TsTypeReturnConverter", function (context, options){
-    let output = "";
-    context.some(rtp => {
-        rtp.some(rtpp => {
-        console.log(rtpp)
-        switch (rtpp) {
-            case 'TSVoidKeyword':
-                return true;
-            case "TSNullKeyword":
-                output = new Handlebars.SafeString("null");
-                break;
-            case "JSONObject":
-                output = new Handlebars.SafeString("{}")
-                break;
-            //TODO: fix type references here
-            default:
-                break;
-        }
-        return output != "";
-    })
-    return output != "";
+Handlebars.registerHelper("TsTypeReturnConverter", function (context, options) {
+  let output = "";
+  context.some((rtp) => {
+    rtp.some((rtpp) => {
+      console.log(rtpp);
+      switch (rtpp) {
+        case "TSVoidKeyword":
+          return true;
+        case "TSNullKeyword":
+          output = new Handlebars.SafeString("null");
+          break;
+        case "JSONObject":
+          output = new Handlebars.SafeString("{}");
+          break;
+        //TODO: fix type references here
+        default:
+          break;
+      }
+      return output != "";
     });
-    return output;
-})
+    return output != "";
+  });
+  return output;
+});
 
 //Now we need to actually do the rendering
-const template = Handlebars.compile(
-  fs.readFileSync("./src/shim.hbs", "utf8")
-);
+const template = Handlebars.compile(fs.readFileSync("./src/shim.hbs", "utf8"));
 
 const render = template(filteredTemplateData);
 try {
