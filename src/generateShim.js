@@ -26,6 +26,7 @@ function newElement(type, name) {
   return { name: name, type: type, subParams: [] };
 }
 
+// We need to know if we are traversing the AST recursively, so we use these helpers
 let recursing = 0;
 function recurseTraversal(path, handler, context) {
   const { scope, node } = path;
@@ -36,6 +37,8 @@ function recurseTraversal(path, handler, context) {
 function isRecursing() {
   return recursing > 0;
 }
+
+// Handlers for the different types we extract from the AST
 
 const enumValueHandler = {
   TSEnumMember(path) {
@@ -60,7 +63,7 @@ const typeHandler = {
       if (!isRecursing()) {
         this.type = path.node.typeName.name;
       }
-      if(path.node.typeName.name === "Array") {
+      if(path.node.typeName.name === "Array" && isRecursing()) {
         let sp = newElement(path.node.typeName.name);
         this.subParams.push(sp);
         subparam = sp;
@@ -88,8 +91,15 @@ const typeHandler = {
     this.subParams.push(newElement(path.node.type));
   },
   TSUnionType(path) {
-    this.type = path.node.type;
-    recurseTraversal(path, typeHandler, this);
+    let subparam = this;
+    if(!isRecursing()){
+      this.type = path.node.type;
+    } else {
+      let sp = newElement(path.node.type);
+      this.subParams.push(sp);
+      subparam = sp;
+    }
+    recurseTraversal(path, typeHandler, subparam);
     path.skip();
   },
   TSArrayType(path) {
@@ -103,10 +113,10 @@ const typeHandler = {
     recurseTraversal(path, typeHandler, subparam);
     path.skip();
   },
-  TSTypeAnnotation(path) {
-    //We do this because we want to ignore return types, which fall under type annotations
-    //and apparently have no other signifier, in a type alias for a function type, eg MaxFunctionHandler
-  },
+  // TSTypeAnnotation(path) {
+  //   //We do this because we want to ignore return types, which fall under type annotations
+  //   //and apparently have no other signifier, in a type alias for a function type, eg MaxFunctionHandler
+  // },
   TSFunctionType(path) {
     let subparam = this;
     if (isRecursing()) {
