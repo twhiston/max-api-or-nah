@@ -22,13 +22,14 @@ const ast = parse(source, {
 // transform it directly into code
 let filteredTemplateData = { enums: [], funcs: [], types: [] };
 
+// We use this in ast traversal/recursion to make a new element we can add data to
 function newElement(type, name) {
   return { name: name, type: type, subParams: [] };
 }
 
 // We need to know if we are traversing the AST recursively, so we use these helpers
 let recursing = 0;
-function recurseTraversal(path, handler, context) {
+function recursiveTraversal(path, handler, context) {
   const { scope, node } = path;
   recursing += 1;
   scope.traverse(node, handler, context);
@@ -63,12 +64,12 @@ const typeHandler = {
       if (!isRecursing()) {
         this.type = path.node.typeName.name;
       }
-      if(path.node.typeName.name === "Array" && isRecursing()) {
+      if (path.node.typeName.name === "Array" && isRecursing()) {
         let sp = newElement(path.node.typeName.name);
         this.subParams.push(sp);
         subparam = sp;
       }
-      recurseTraversal(path, typeHandler, subparam);
+      recursiveTraversal(path, typeHandler, subparam);
       path.skip();
     } else {
       this.subParams.push(newElement(path.node.typeName.name));
@@ -92,14 +93,14 @@ const typeHandler = {
   },
   TSUnionType(path) {
     let subparam = this;
-    if(!isRecursing()){
+    if (!isRecursing()) {
       this.type = path.node.type;
     } else {
       let sp = newElement(path.node.type);
       this.subParams.push(sp);
       subparam = sp;
     }
-    recurseTraversal(path, typeHandler, subparam);
+    recursiveTraversal(path, typeHandler, subparam);
     path.skip();
   },
   TSArrayType(path) {
@@ -110,13 +111,9 @@ const typeHandler = {
     } else {
       this.type = path.node.type;
     }
-    recurseTraversal(path, typeHandler, subparam);
+    recursiveTraversal(path, typeHandler, subparam);
     path.skip();
   },
-  // TSTypeAnnotation(path) {
-  //   //We do this because we want to ignore return types, which fall under type annotations
-  //   //and apparently have no other signifier, in a type alias for a function type, eg MaxFunctionHandler
-  // },
   TSFunctionType(path) {
     let subparam = this;
     if (isRecursing()) {
@@ -125,7 +122,7 @@ const typeHandler = {
     } else {
       this.type = path.node.type;
     }
-    recurseTraversal(path, typeHandler, subparam);
+    recursiveTraversal(path, typeHandler, subparam);
     //Skip because we don't want to process the subtree this again
     path.skip();
   },
@@ -156,17 +153,12 @@ const functionValueHandler = {
       scope.traverse(node, typeHandler, param);
       this.params.push(param);
       return;
-    } else {
-      console.log(path);
     }
   },
   Identifier(path) {
     if (path.key === "id") {
       this.id = path.node.name;
       return;
-    }
-    if (path.key === "typeName") {
-      console.log(path);
     }
     if (path.listKey === "params") {
       let param = { name: path.node.name, type: "", subParams: [] };
@@ -208,12 +200,12 @@ const ModuleHandler = {
 
 //Traverse the ast, using the functions above to walk the path and extract the data we need
 traverse.default(ast, {
-  TSModuleDeclaration(path){
-      // Only traverse things inside the module, since types outside of that
-      // are unexported helpers we don't need to care about
-      const { scope, node } = path;
-      scope.traverse(node, ModuleHandler);
-  }
+  TSModuleDeclaration(path) {
+    // Only traverse things inside the module, since types outside of that
+    // are unexported helpers we don't need to care about
+    const { scope, node } = path;
+    scope.traverse(node, ModuleHandler);
+  },
 });
 
 function joinComments(commentArray) {
