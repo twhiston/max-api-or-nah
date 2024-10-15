@@ -2,8 +2,6 @@ import fs from "fs";
 import Handlebars from "handlebars";
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
-import * as t from "@babel/types";
-import { enumStringMember } from "@babel/types";
 
 // Load our max api types
 const source = fs.readFileSync(
@@ -24,7 +22,22 @@ const ast = parse(source, {
 // transform it directly into code
 let filteredTemplateData = { enums: [], funcs: [], types: [] };
 
-const EnumValueHandler = {
+function newElement(type, name) {
+  return { name: name, type: type, subParams: [] };
+}
+
+let recursing = 0;
+function recurseTraversal(path, handler, context) {
+  const { scope, node } = path;
+  recursing += 1;
+  scope.traverse(node, handler, context);
+  recursing -= 1;
+}
+function isRecursing() {
+  return recursing > 0;
+}
+
+const enumValueHandler = {
   TSEnumMember(path) {
     let value = {
       key: path.node.id.name,
@@ -35,158 +48,121 @@ const EnumValueHandler = {
   },
 };
 
-//Sometimes we have inner types, such as array types or union types
-//So we need to handle these
-// const innerTypeHandler = {
-//   TSStringKeyword(path) {
-//     this.push({type: path.node.type})
-//   },
-//   TSBooleanKeyword(path) {
-//     this.push({type: path.node.type})
-//   },
-//   TSNullKeyword(path) {
-//     this.push({type: path.node.type})
-//   },
-// }
-
-function newSubParam(type) {
-  return { type: type, subParams: [] };
-}
-
-let recursing = 0;
-
-function recurseTraversal(path, handler, context){
-  const { scope, node } = path;
-  recursing += 1;
-  scope.traverse(node, handler, context);
-  recursing -= 1;
-}
-function isRecursing(){
-  return (recursing > 0);
-}
 //Called inside the function handler
 const typeHandler = {
   TSTypeReference(path) {
     //An Array<> !== TSArrayType!!!!
-    if(path.node.typeName.name === "Array"){
+    if (
+      path.node.typeName.name === "Array" ||
+      path.node.typeName.name === "Record"
+    ) {
       let subparam = this;
-      if (isRecursing()) {
-        let sp = newSubParam(path.node.typeName.name);
-        this.push(sp);
-        subparam = sp.subParams;
-      } else {
-        this.type = path.node.type;
+      if (!isRecursing()) {
+        this.type = path.node.typeName.name;
+      }
+      if(path.node.typeName.name === "Array") {
+        let sp = newElement(path.node.typeName.name);
+        this.subParams.push(sp);
+        subparam = sp;
       }
       recurseTraversal(path, typeHandler, subparam);
       path.skip();
     } else {
-      this.push(newSubParam(path.node.typeName.name));
+      this.subParams.push(newElement(path.node.typeName.name));
     }
-
-    //if(this.type === "") this.type = path.node.typeName.name;
   },
   TSStringKeyword(path) {
-    this.push(newSubParam(path.node.type));
-    //if(this.type === "") this.type = path.node.type;
+    this.subParams.push(newElement(path.node.type));
   },
   TSBooleanKeyword(path) {
-    this.push(newSubParam(path.node.type));
-    //if(this.type === "") this.type = path.node.type;
+    this.subParams.push(newElement(path.node.type));
   },
   TSNullKeyword(path) {
-    this.push(newSubParam(path.node.type));
-    //if(this.type === "") this.type = path.node.type;
+    this.subParams.push(newElement(path.node.type));
   },
   TSAnyKeyword(path) {
-    if(path.key !== "typeAnnotation")
-      this.push(newSubParam(path.node.type));
-    //if(this.type === "") this.type = path.node.type;
+    if (path.key !== "typeAnnotation")
+      this.subParams.push(newElement(path.node.type));
   },
   TSNumberKeyword(path) {
-    this.push(newSubParam(path.node.type));
-  },
-  TSVoidKeyword(path) {
-    console.log(path);
-  },
-  TSTypeParameterInstantiation(path) {
-    //if it's this type we know its something like Record<MaxFunctionSelector, MaxFunctionHandler>
-    // in this situation we need to traverse the tree specifically and scope out what we need
-    // if (Array.isArray(this)) {
-    //   this.push(newSubParam(path.node.type));
-    // } else {
-    //   let subP = [];
-    //   const { scope, node } = path;
-    //   scope.traverse(node, paramHandler, subP);
-    //   this.subParams = subP;
-    // }
+    this.subParams.push(newElement(path.node.type));
   },
   TSUnionType(path) {
     this.type = path.node.type;
-    let subparam = this;
-    if(!isRecursing()){
-      subparam = this.subParams;
-    }
-    recurseTraversal(path, typeHandler, subparam);
-    //Skip because we don't want to process the subtree this again
+    recurseTraversal(path, typeHandler, this);
     path.skip();
   },
   TSArrayType(path) {
-    let subparam = this.subParams;
+    let subparam = this;
     if (isRecursing()) {
-      let subparam = newSubParam(path.node.type);
+      subparam = newElement(path.node.type);
       this.subParams.push(subparam);
-      subparam = subparam.subParams;
+    } else {
+      this.type = path.node.type;
+    }
+    recurseTraversal(path, typeHandler, subparam);
+    path.skip();
+  },
+  TSTypeAnnotation(path) {
+    //We do this because we want to ignore return types, which fall under type annotations
+    //and apparently have no other signifier, in a type alias for a function type, eg MaxFunctionHandler
+  },
+  TSFunctionType(path) {
+    let subparam = this;
+    if (isRecursing()) {
+      subparam = newElement(path.node.type);
+      this.subParams.push(subparam);
     } else {
       this.type = path.node.type;
     }
     recurseTraversal(path, typeHandler, subparam);
     //Skip because we don't want to process the subtree this again
-    path.skip(); // if checking the children is irrelevant
-  },
-  TSTypeAnnotation(path) {
-    //path.skip();
-    //We do this because we want to ignore return types, which fall under type annotations
-    //and apparently have no other signifier, in a type alias for a function type, eg MaxFunctionHandler
+    path.skip();
   },
 };
 
-const GetFunctionValues = {
+const functionValueHandler = {
   TSTypeAnnotation(path) {
     if (path.key == "returnType") {
       const { scope, node } = path;
       const returnTypeHandler = {
         Identifier(path) {
-          this.funcData.returnType.push(path.node.name);
+          this.returnType.push(path.node.name);
         },
         TSTypeAnnotation(path) {
-          this.funcData.returnType.push(path.node.type);
+          this.returnType.push(path.node.type);
         },
         TSVoidKeyword(path) {
-          this.funcData.returnType.push(path.type);
+          this.returnType.push(path.type);
         },
       };
       scope.traverse(node, returnTypeHandler, this);
     }
   },
+  RestElement(path) {
+    if (path.listKey === "params") {
+      let param = { name: path.node.argument.name, type: "", subParams: [] };
+      const { scope, node } = path;
+      scope.traverse(node, typeHandler, param);
+      this.params.push(param);
+      return;
+    } else {
+      console.log(path);
+    }
+  },
   Identifier(path) {
     if (path.key === "id") {
-      this.funcData.id = path.node.name;
+      this.id = path.node.name;
       return;
     }
-    //A param is a custom type of value
+    if (path.key === "typeName") {
+      console.log(path);
+    }
     if (path.listKey === "params") {
       let param = { name: path.node.name, type: "", subParams: [] };
       const { scope, node } = path;
       scope.traverse(node, typeHandler, param);
-      this.funcData.params.push(param);
-      return;
-    }
-    // //An argument is like ...args
-    if (path.key === "argument") {
-      let param = { name: path.node.name, type: "", subParams: [] };
-      const { scope, node } = path;
-      scope.traverse(node, typeHandler, param);
-      this.funcData.params.push(param);
+      this.params.push(param);
       return;
     }
   },
@@ -200,12 +176,11 @@ const ModuleHandler = {
       leadingComment: leadingComment,
       values: [],
     };
-    path.traverse(EnumValueHandler, enumData.values);
+    path.traverse(enumValueHandler, enumData.values);
     filteredTemplateData.enums.push(enumData);
   },
   TSTypeAliasDeclaration(path) {
-    //let typeData = { name: path.node.id.name, type: path.node.typeAnnotation.type, subParams: [] };
-    let typeData = { name: path.node.id.name, type: "", subParams: [] };
+    let typeData = newElement("", path.node.id.name);
     path.traverse(typeHandler, typeData);
     filteredTemplateData.types.push(typeData);
   },
@@ -216,21 +191,19 @@ const ModuleHandler = {
       params: [],
       returnType: [],
     };
-    path.traverse(GetFunctionValues, { funcData });
+    path.traverse(functionValueHandler, funcData);
     filteredTemplateData.funcs.push(funcData);
   },
 };
 
 //Traverse the ast, using the functions above to walk the path and extract the data we need
 traverse.default(ast, {
-  enter(path) {
-    if (t.isTSModuleDeclaration(path.node)) {
+  TSModuleDeclaration(path){
       // Only traverse things inside the module, since types outside of that
       // are unexported helpers we don't need to care about
       const { scope, node } = path;
       scope.traverse(node, ModuleHandler);
-    }
-  },
+  }
 });
 
 function joinComments(commentArray) {
@@ -271,10 +244,8 @@ Handlebars.registerHelper("returnPromise", function (context, options) {
       return new Handlebars.SafeString(
         "Promise.resolve(" + options.fn(this) + ")"
       );
-      break;
     default:
       return new Handlebars.SafeString("{" + options.fn(this) + "}");
-      break;
   }
 });
 
