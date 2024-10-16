@@ -1,0 +1,4 @@
+/*
+{{#CommentBuilder func}}{{/CommentBuilder}}
+*/
+{{func.id}}: ({{#each func.params}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}) => {{#returnPromise func.returnType}}{{#ReturnTypeConverter func.returnType}}{{/ReturnTypeConverter}}{{/returnPromise}},

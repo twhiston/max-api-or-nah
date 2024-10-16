@@ -221,12 +221,20 @@ function joinComments(commentArray) {
 
 console.log("Finished Traversal");
 
-// // type {{type.name}} = {{#each type.subParams}} {{this.type}} {{#unless @last}} | {{/unless}} {{/each}}
-Handlebars.registerPartial(
-  "type",
-  `
-//type {{type.name}} = {{#typeRenderer (TypeConverter type.subParams) type}} {{/typeRenderer}}`
-);
+var partialsDir = node_modules()+'/../src/templates/partials';
+
+var filenames = fs.readdirSync(partialsDir);
+
+filenames.forEach(function (filename) {
+  var matches = /^([^.]+).hbs$/.exec(filename);
+  if (!matches) {
+    return;
+  }
+  var name = matches[1];
+  var template = fs.readFileSync(partialsDir + '/' + filename, 'utf8');
+  Handlebars.registerPartial(name, template);
+});
+
 Handlebars.registerHelper("typeRenderer", function (types, typedef) {
   return new Handlebars.SafeString(typeRenderer(types, typedef));
 });
@@ -285,28 +293,6 @@ function typeRenderer(types, typedef) {
       return typedef.type;
   }
 }
-
-//Handle our filtered enum data as a partial
-Handlebars.registerPartial(
-  "enum",
-  `
-/*{{enum.leadingComment}}*/
-{{enum.id}}: {
-{{#each enum.values}}
-  {{this.key}}: '{{this.value}}',
-{{/each}}
-},`
-);
-//Render a function definition
-Handlebars.registerPartial(
-  "func",
-  `
-/*
-{{#CommentBuilder func}}{{/CommentBuilder}}
-*/
-{{func.id}}: ({{#each func.params}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}) => {{#returnPromise func.returnType}}{{#ReturnTypeConverter func.returnType}}{{/ReturnTypeConverter}}{{/returnPromise}},
-    `
-);
 
 Handlebars.registerHelper("TypeConverter", function (context, options) {
   return typeConverter(context);
@@ -449,7 +435,7 @@ Handlebars.registerHelper("ReturnTypeConverter", function (context, options) {
 });
 
 //Now we need to actually do the rendering
-const template = Handlebars.compile(fs.readFileSync("./src/shim.hbs", "utf8"));
+const template = Handlebars.compile(fs.readFileSync("./src/templates/shim.hbs", "utf8"));
 
 const render = template(filteredTemplateData);
 try {
