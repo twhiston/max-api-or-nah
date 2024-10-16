@@ -4,6 +4,7 @@ import Handlebars from "handlebars";
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
 import node_modules from "node_modules-path";
+import * as Helpers from "./helpers.js"
 
 const maxApiDefinitionLocation = Path.resolve(
   node_modules("@types/max-api"),
@@ -221,10 +222,9 @@ function joinComments(commentArray) {
 
 console.log("Finished Traversal");
 
+// Load Template Partials
 var partialsDir = node_modules()+'/../src/templates/partials';
-
 var filenames = fs.readdirSync(partialsDir);
-
 filenames.forEach(function (filename) {
   var matches = /^([^.]+).hbs$/.exec(filename);
   if (!matches) {
@@ -235,213 +235,20 @@ filenames.forEach(function (filename) {
   Handlebars.registerPartial(name, template);
 });
 
-Handlebars.registerHelper("typeRenderer", function (types, typedef) {
-  return new Handlebars.SafeString(typeRenderer(types, typedef));
-});
-
-function typeRenderer(types, typedef) {
-  switch (typedef.type) {
-    case "TSUnionType":
-      let union = [];
-      types.forEach((element) => {
-        union.push(typeRenderer(types, element));
-      });
-      return union
-        .map(function (elem) {
-          return elem;
-        })
-        .join(" | ");
-    case "Array":
-      let arr = "Array<";
-      typedef.subParams.forEach((element) => {
-        arr += typeRenderer(element.subParams, element);
-      });
-      arr += ">";
-      return arr;
-    case "TSFunctionType":
-      let output = "(...args: ";
-      typedef.subParams.forEach((element) => {
-        switch (element.type) {
-          case "TSArrayType":
-            element.subParams.forEach((inner) => {
-              switch (inner.type) {
-                case "TSAnyKeyword":
-                  output += "any";
-                  break;
-                default:
-                  throw new Error(
-                    "type helper " +
-                      inner.type +
-                      " unknown! Please create github issue"
-                  );
-              }
-              output += "[]";
-            });
-            break;
-          default:
-            throw new Error(
-              "type helper " +
-                element.type +
-                " unknown! Please create github issue"
-            );
-        }
-      });
-      output += ")";
-      return output;
-
-    default:
-      return typedef.type;
-  }
-}
-
-Handlebars.registerHelper("TypeConverter", function (context, options) {
-  return typeConverter(context);
-});
-
-function typeConverter(context) {
-  let output = [];
-  context.forEach((element) => {
-    switch (element.type) {
-      case "TSStringKeyword":
-        output.push({ type: "string" });
-        break;
-      case "TSNumberKeyword":
-        output.push({ type: "number" });
-        break;
-      case "Array":
-        let op = { type: "Array", subParams: [] };
-        op.subParams = typeConverter(element.subParams);
-        output.push(op);
-        break;
-      case "TSUnionType":
-        let un = { type: element.type, subParams: [] };
-        un.subParams = typeConverter(element.subParams);
-        output.push(un);
-        break;
-      default:
-        output.push({ type: element.type });
-    }
-  });
-  return output;
-}
-
-//TODO rejig this into a general parser for the return type array
-Handlebars.registerHelper("returnPromise", function (context, options) {
-  switch (context[0]) {
-    case "Promise":
-      return new Handlebars.SafeString(
-        "Promise.resolve(" + options.fn(this) + ")"
-      );
-    default:
-      return new Handlebars.SafeString("{" + options.fn(this) + "}");
-  }
-});
-
-Handlebars.registerHelper("CommentBuilder", function (context, options) {
-  let comment = "* " + context.comment.split("*").pop().trim();
-  if (Array.isArray(context.params) && context.params.length > 0) {
-    comment += "\n* Types: ";
-    comment += "\n*   " + commentParamBuilder(context.params);
-  }
-  const findArray = [
-    "TSArrayType",
-    "TSStringKeyword",
-    "TSNumberKeyword",
-    "TSUnionType",
-  ];
-  const replaceArray = ["array", "string", "number", "union"];
-  return new Handlebars.SafeString(
-    replaceBulk(comment, findArray, replaceArray)
-  );
-});
-
-function commentParamBuilder(params) {
-  let comment = "";
-  params.forEach((element) => {
-    if (element.name !== undefined && element.name !== "")
-      comment += element.name;
-    if (element.type !== "") {
-      comment += " " + element.type;
-      switch (element.type) {
-        case "TSArrayType":
-        case "Record":
-        case "Array":
-          comment += "<";
-          let subs = element.subParams.map(function (elem) {
-            return commentParamBuilder([elem]);
-          });
-          comment += subs.join(", ").trim();
-          comment += ">";
-          break;
-        case "TSUnionType":
-          let union = element.subParams.map(function (elem){
-            return commentParamBuilder([elem]);
-          })
-          comment = union.join(" |").trim();
-          break;
-        default:
-          comment += commentParamBuilder(element.subParams);
-      }
-    } else if (
-      Array.isArray(element.subParams) &&
-      element.subParams.length > 0
-    ) {
-      comment += commentParamBuilder(element.subParams) + "\n*   ";
-    }
-  });
-  if(comment.endsWith("\n*   "))
-    comment = comment.slice(0, -5)
-  return comment;
-}
-
-//https://stackoverflow.com/questions/5069464/replace-multiple-strings-at-once
-function replaceBulk(str, findArray, replaceArray) {
-  var i,
-    regex = [],
-    map = {};
-  for (i = 0; i < findArray.length; i++) {
-    regex.push(findArray[i].replace(/([-[\]{}()*+?.\\^$|#,])/g, "\\$1"));
-    map[findArray[i]] = replaceArray[i];
-  }
-  regex = regex.join("|");
-  str = str.replace(new RegExp(regex, "g"), function (matched) {
-    return map[matched];
-  });
-  return str;
-}
-
-Handlebars.registerHelper("ReturnTypeConverter", function (context, options) {
-  let output = "";
-  context.some((rtp) => {
-    console.log(rtp);
-    switch (rtp) {
-      case "TSVoidKeyword":
-        return true;
-      case "TSNullKeyword":
-        output = new Handlebars.SafeString("null");
-        break;
-      case "JSONObject":
-        output = new Handlebars.SafeString("{}");
-        break;
-      default:
-        // throw new Error(
-        //   "Return type " + context + " unknown! Please create github issue"
-        // );
-        break;
-    }
-    return output != "";
-  });
-  return output;
-});
+Handlebars.registerHelper("typeRenderer", Helpers.typeRender);
+Handlebars.registerHelper("TypeConverter", Helpers.typeConverter);
+Handlebars.registerHelper("returnPromise", Helpers.returnPromise);
+Handlebars.registerHelper("CommentBuilder", Helpers.commentBuilder);
+Handlebars.registerHelper("ReturnTypeConverter", Helpers.returnTypeConverter);
 
 //Now we need to actually do the rendering
-const template = Handlebars.compile(fs.readFileSync("./src/templates/shim.hbs", "utf8"));
+const template = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/shim.hbs", "utf8"));
 
 const render = template(filteredTemplateData);
 try {
   fs.writeFileSync("./index.js", render);
-  // file written successfully
 } catch (err) {
   console.error(err);
 }
-console.log(render);
+
+console.log("done");
