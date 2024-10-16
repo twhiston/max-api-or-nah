@@ -1,13 +1,16 @@
 import fs from "fs";
+import Path from "path";
 import Handlebars from "handlebars";
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
+import node_modules from "node_modules-path";
 
-// Load our max api types
-const source = fs.readFileSync(
-  "./node_modules/@types/max-api/index.d.ts",
-  "utf-8"
+const maxApiDefinitionLocation = Path.resolve(
+  node_modules("@types/max-api"),
+  "@types/max-api/index.d.ts"
 );
+// Load our max api types
+const source = fs.readFileSync(maxApiDefinitionLocation, "utf-8");
 
 // Use babel to get out an AST tree of the type description
 // In theory you could also do this with pure TS but this is
@@ -218,26 +221,123 @@ function joinComments(commentArray) {
 
 console.log("Finished Traversal");
 
+// // type {{type.name}} = {{#each type.subParams}} {{this.type}} {{#unless @last}} | {{/unless}} {{/each}}
+Handlebars.registerPartial(
+  "type",
+  `
+//type {{type.name}} = {{#typeRenderer (TypeConverter type.subParams) type}} {{/typeRenderer}}`
+);
+Handlebars.registerHelper("typeRenderer", function (types, typedef) {
+  return new Handlebars.SafeString(typeRenderer(types, typedef));
+});
+
+function typeRenderer(types, typedef) {
+  switch (typedef.type) {
+    case "TSUnionType":
+      let union = [];
+      types.forEach((element) => {
+        union.push(typeRenderer(types, element));
+      });
+      return union
+        .map(function (elem) {
+          return elem;
+        })
+        .join(" | ");
+    case "Array":
+      let arr = "Array<";
+      typedef.subParams.forEach((element) => {
+        arr += typeRenderer(element.subParams, element);
+      });
+      arr += ">";
+      return arr;
+    case "TSFunctionType":
+      let output = "(...args: ";
+      typedef.subParams.forEach((element) => {
+        switch (element.type) {
+          case "TSArrayType":
+            element.subParams.forEach((inner) => {
+              switch (inner.type) {
+                case "TSAnyKeyword":
+                  output += "any";
+                  break;
+                default:
+                  throw new Error(
+                    "type helper " +
+                      inner.type +
+                      " unknown! Please create github issue"
+                  );
+              }
+              output += "[]";
+            });
+            break;
+          default:
+            throw new Error(
+              "type helper " +
+                element.type +
+                " unknown! Please create github issue"
+            );
+        }
+      });
+      output += ")";
+      return output;
+
+    default:
+      return typedef.type;
+  }
+}
+
 //Handle our filtered enum data as a partial
 Handlebars.registerPartial(
   "enum",
   `
-    /*{{#TsTypeCommentConverter enum.leadingComment}}{{/TsTypeCommentConverter}} */
-    {{enum.id}}: {
-    {{#each enum.values}}
-        {{this.key}}: '{{this.value}}',
-    {{/each}}
-    },
-    `
+/*{{enum.leadingComment}}*/
+{{enum.id}}: {
+{{#each enum.values}}
+  {{this.key}}: '{{this.value}}',
+{{/each}}
+},`
 );
 //Render a function definition
 Handlebars.registerPartial(
   "func",
   `
-/*{{#TsTypeCommentConverter func.comment}}{{/TsTypeCommentConverter}} */
-{{func.id}}: ({{#each func.params}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}) => {{#returnPromise func.returnType}}{{#TsTypeReturnConverter func.returnTypeParameters}}{{/TsTypeReturnConverter}}{{/returnPromise}},
+/*
+{{#CommentBuilder func}}{{/CommentBuilder}}
+*/
+{{func.id}}: ({{#each func.params}}{{this.name}}{{#unless @last}}, {{/unless}}{{/each}}) => {{#returnPromise func.returnType}}{{#ReturnTypeConverter func.returnType}}{{/ReturnTypeConverter}}{{/returnPromise}},
     `
 );
+
+Handlebars.registerHelper("TypeConverter", function (context, options) {
+  return typeConverter(context);
+});
+
+function typeConverter(context) {
+  let output = [];
+  context.forEach((element) => {
+    switch (element.type) {
+      case "TSStringKeyword":
+        output.push({ type: "string" });
+        break;
+      case "TSNumberKeyword":
+        output.push({ type: "number" });
+        break;
+      case "Array":
+        let op = { type: "Array", subParams: [] };
+        op.subParams = typeConverter(element.subParams);
+        output.push(op);
+        break;
+      case "TSUnionType":
+        let un = { type: element.type, subParams: [] };
+        un.subParams = typeConverter(element.subParams);
+        output.push(un);
+        break;
+      default:
+        output.push({ type: element.type });
+    }
+  });
+  return output;
+}
 
 //TODO rejig this into a general parser for the return type array
 Handlebars.registerHelper("returnPromise", function (context, options) {
@@ -251,16 +351,62 @@ Handlebars.registerHelper("returnPromise", function (context, options) {
   }
 });
 
-Handlebars.registerHelper(
-  "TsTypeCommentConverter",
-  function (context, options) {
-    const findArray = ["TSArrayType", "TSStringKeyword"];
-    const replaceArray = ["array", "string"];
-    return new Handlebars.SafeString(
-      replaceBulk(context, findArray, replaceArray)
-    );
+Handlebars.registerHelper("CommentBuilder", function (context, options) {
+  let comment = "* " + context.comment;
+  if (Array.isArray(context.params) && context.params.length > 0) {
+    comment += "\n* Types: ";
+    comment += "\n*   " + commentParamBuilder(context.params);
   }
-);
+  const findArray = [
+    "TSArrayType",
+    "TSStringKeyword",
+    "TSNumberKeyword",
+    "TSUnionType",
+  ];
+  const replaceArray = ["array", "string", "number", "union"];
+  return new Handlebars.SafeString(
+    replaceBulk(comment, findArray, replaceArray)
+  );
+});
+
+function commentParamBuilder(params) {
+  let comment = "";
+  params.forEach((element) => {
+    if (element.name !== undefined && element.name !== "")
+      comment += element.name;
+    if (element.type !== "") {
+      comment += " " + element.type;
+      switch (element.type) {
+        case "TSArrayType":
+        case "Record":
+        case "Array":
+          comment += "<";
+          let subs = element.subParams.map(function (elem) {
+            return commentParamBuilder([elem]);
+          });
+          comment += subs.join(", ").trim();
+          comment += ">";
+          break;
+        case "TSUnionType":
+          let union = element.subParams.map(function (elem){
+            return commentParamBuilder([elem]);
+          })
+          comment = union.join(" |").trim();
+          break;
+        default:
+          comment += commentParamBuilder(element.subParams);
+      }
+    } else if (
+      Array.isArray(element.subParams) &&
+      element.subParams.length > 0
+    ) {
+      comment += commentParamBuilder(element.subParams) + "\n*   ";
+    }
+  });
+  if(comment.endsWith("\n*   "))
+    comment = comment.slice(0, -5)
+  return comment;
+}
 
 //https://stackoverflow.com/questions/5069464/replace-multiple-strings-at-once
 function replaceBulk(str, findArray, replaceArray) {
@@ -278,26 +424,25 @@ function replaceBulk(str, findArray, replaceArray) {
   return str;
 }
 
-Handlebars.registerHelper("TsTypeReturnConverter", function (context, options) {
+Handlebars.registerHelper("ReturnTypeConverter", function (context, options) {
   let output = "";
   context.some((rtp) => {
-    rtp.some((rtpp) => {
-      console.log(rtpp);
-      switch (rtpp) {
-        case "TSVoidKeyword":
-          return true;
-        case "TSNullKeyword":
-          output = new Handlebars.SafeString("null");
-          break;
-        case "JSONObject":
-          output = new Handlebars.SafeString("{}");
-          break;
-        //TODO: fix type references here
-        default:
-          break;
-      }
-      return output != "";
-    });
+    console.log(rtp);
+    switch (rtp) {
+      case "TSVoidKeyword":
+        return true;
+      case "TSNullKeyword":
+        output = new Handlebars.SafeString("null");
+        break;
+      case "JSONObject":
+        output = new Handlebars.SafeString("{}");
+        break;
+      default:
+        // throw new Error(
+        //   "Return type " + context + " unknown! Please create github issue"
+        // );
+        break;
+    }
     return output != "";
   });
   return output;

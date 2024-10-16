@@ -1,4 +1,6 @@
 /**
+ * MAX-API-OR-NAH?
+ *
  * THIS FILE IS AUTO GENERATED. DO NOT EDIT MANUALLY
  */
 let Max
@@ -6,6 +8,10 @@ let Max
 const noMax = {
     {{#each enums}}
     {{>enum enum=.}}
+    {{/each}}
+
+    {{#each types}}
+    {{>type type=.}}
     {{/each}}
 
     {{#each funcs}}
@@ -21,4 +27,4 @@ try {
     process.env.MAX_ENV = "nah"
 }
 
-module.exports = Max
+export default Max

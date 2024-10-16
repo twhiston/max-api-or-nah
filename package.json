@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "node ./src/generateShim.js"
+    "build": "node ./src/generateShim.js",
+    "prepare": "node ./src/generateShim.js"
   },
   "repository": {
     "type": "git",
@@ -29,6 +29,7 @@
     "@babel/traverse": "^7.25.6",
     "@types/max-api": "^2.0.3",
     "handlebars": "^4.7.8",
-    "max-api-or-not": "^1.2.0"
+    "max-api-or-not": "^1.2.0",
+    "node_modules-path": "^2.0.8"
   }
 }
