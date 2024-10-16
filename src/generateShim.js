@@ -341,7 +341,7 @@ function typeConverter(context) {
 
 //TODO rejig this into a general parser for the return type array
 Handlebars.registerHelper("returnPromise", function (context, options) {
-  switch (context) {
+  switch (context[0]) {
     case "Promise":
       return new Handlebars.SafeString(
         "Promise.resolve(" + options.fn(this) + ")"
@@ -352,7 +352,7 @@ Handlebars.registerHelper("returnPromise", function (context, options) {
 });
 
 Handlebars.registerHelper("CommentBuilder", function (context, options) {
-  let comment = "* " + context.comment;
+  let comment = "* " + context.comment.split("*").pop().trim();
   if (Array.isArray(context.params) && context.params.length > 0) {
     comment += "\n* Types: ";
     comment += "\n*   " + commentParamBuilder(context.params);
