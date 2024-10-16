@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import Max from './../index.js'
+import Max from '../index.js'
 
 test('test process.env.MAX_ENV is nah', () => {
   expect(process.env.MAX_ENV).toBe("nah")
