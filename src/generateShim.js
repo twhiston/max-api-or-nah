@@ -1,5 +1,5 @@
-import fs from "fs";
-import Path from "path";
+import fs from "node:fs";
+import Path from "node:path";
 import Handlebars from "handlebars";
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
