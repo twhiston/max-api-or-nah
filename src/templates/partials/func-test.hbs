@@ -1,0 +1,13 @@
+test('test {{func.id}}', {{#if (returnPromiseTest func.returnType) }} async {{/if}}() => {
+{{#if (isPostFunction func.id)}}
+  expect.assertions(3)
+  const consoleMock = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+{{else}}
+  expect.assertions(1)
+{{/if}}
+ {{#if (returnPromiseTest func.returnType) }} await {{/if}}expect(Max.{{func.id}}({{#testParamResolver func.params}}{{/testParamResolver}})).{{#if (returnPromiseTest func.returnType) }}resolves.{{/if}}{{#returnTypeTest func.returnType}}{{/returnTypeTest}};
+{{#if (isPostFunction func.id)}}
+  expect(consoleMock).toHaveBeenCalledOnce();
+  expect(consoleMock).toHaveBeenLastCalledWith({{#testParamResolver func.params}}{{/testParamResolver}});
+{{/if}}
+})

@@ -235,14 +235,21 @@ filenames.forEach(function (filename) {
   Handlebars.registerPartial(name, template);
 });
 
+//Template Helpers
 Handlebars.registerHelper("typeRenderer", Helpers.typeRender);
 Handlebars.registerHelper("TypeConverter", Helpers.typeConverter);
 Handlebars.registerHelper("returnPromise", Helpers.returnPromise);
 Handlebars.registerHelper("CommentBuilder", Helpers.commentBuilder);
 Handlebars.registerHelper("ReturnTypeConverter", Helpers.returnTypeConverter);
 
+//Testing helpers
+Handlebars.registerHelper("returnPromiseTest", Helpers.returnPromiseTest);
+Handlebars.registerHelper("returnTypeTest", Helpers.returnTypeTest);
+Handlebars.registerHelper("isPostFunction", Helpers.isPostFunction);
+Handlebars.registerHelper("testParamResolver", Helpers.testParamResolver);
+
 //Now we need to actually do the rendering
-const template = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/shim.hbs", "utf8"));
+const template = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/index.hbs", "utf8"));
 
 const render = template(filteredTemplateData);
 try {
@@ -251,4 +258,13 @@ try {
   console.error(err);
 }
 
-console.log("done");
+console.log("generated index.js");
+
+const tests = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/index.test.hbs", "utf8"));
+const rendertests = tests(filteredTemplateData);
+try {
+  fs.writeFileSync("./index.test.js", rendertests);
+} catch (err) {
+  console.error(err);
+}
+console.log("generated index.test.js");

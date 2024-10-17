@@ -1,0 +1,20 @@
+/**
+ * MAX-API-OR-NAH?
+ *
+ * THIS TEST FILE IS AUTO GENERATED. DO NOT EDIT MANUALLY
+ */
+
+import { expect, test, vi } from 'vitest'
+import Max from './index.js'
+
+test('test process.env.MAX_ENV is nah', () => {
+  expect(process.env.MAX_ENV).toBe("nah")
+})
+
+{{#each enums}}
+{{>enum-test enum=.}}
+{{/each}}
+
+{{#each funcs}}
+{{>func-test func=.}}
+{{/each}}

@@ -1,0 +1,5 @@
+test('test {{enum.id}} enum', () => {
+  {{#each enum.values}}
+  expect(Max.{{../enum.id}}.{{this.key}}).toBe("{{this.value}}")
+  {{/each}}
+})
