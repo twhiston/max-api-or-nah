@@ -251,9 +251,13 @@ Handlebars.registerHelper("testParamResolver", Helpers.testParamResolver);
 //Now we need to actually do the rendering
 const template = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/index.hbs", "utf8"));
 
+if (!fs.existsSync("./dist")){
+  fs.mkdirSync("./dist");
+}
+
 const render = template(filteredTemplateData);
 try {
-  fs.writeFileSync("./index.js", render);
+  fs.writeFileSync("./dist/index.js", render);
 } catch (err) {
   console.error(err);
 }
@@ -263,14 +267,14 @@ console.log("generated index.js");
 const tests = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/index.test.hbs", "utf8"));
 const rendertests = tests(filteredTemplateData);
 try {
-  fs.writeFileSync("./index.test.js", rendertests);
+  fs.writeFileSync("./dist/index.test.js", rendertests);
 } catch (err) {
   console.error(err);
 }
 console.log("generated index.test.js");
 
 try {
-  fs.writeFileSync("./index.d.ts", source)
+  fs.writeFileSync("./dist/index.d.ts", source)
 } catch (err) {
   console.error(err);
 }

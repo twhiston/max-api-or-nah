@@ -2,7 +2,8 @@
   "name": "max-api-or-nah",
   "version": "1.0.0",
   "description": "Taking an extremely overengineered approach to wrapping the max-api object",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "typings":  "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "test": "vitest run",
