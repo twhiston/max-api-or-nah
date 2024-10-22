@@ -3,3 +3,4 @@ coverage/
 .github/
 .vscode/
 vitest.config.ts
+*.test.js
