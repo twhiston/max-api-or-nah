@@ -8,7 +8,8 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "build": "node ./src/generateShim.js",
-    "prepare": "node ./src/generateShim.js"
+    "copy-types": "cp ./node_modules/@types/max-api/index.d.ts .",
+    "prepare": "npm run build && npm run copy-types"
   },
   "repository": {
     "type": "git",
