@@ -268,3 +268,10 @@ try {
   console.error(err);
 }
 console.log("generated index.test.js");
+
+try {
+  fs.writeFileSync("./index.d.ts", source)
+} catch (err) {
+  console.error(err);
+}
+console.log("copied index.d.ts");
