@@ -8,7 +8,7 @@
   "scripts": {
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "build": "node ./src/generateShim.js",
+    "build": "node ./src/generate.js",
     "prepare": "npm run build"
   },
   "repository": {
