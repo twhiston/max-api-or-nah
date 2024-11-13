@@ -4,3 +4,5 @@ index.js
 coverage/
 index.test.js
 index.d.ts
+index.cjs
+index.test.cjs

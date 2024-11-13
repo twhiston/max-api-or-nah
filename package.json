@@ -1,14 +1,21 @@
 {
   "name": "max-api-or-nah",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Taking an extremely overengineered approach to wrapping the max-api object",
-  "main": "./index.js",
-  "types":  "./index.d.ts",
+  "main": "./index.cjs",
+  "module": "index.js",
+  "types": "./index.d.ts",
   "type": "module",
+  "exports": {
+    "import": "./index.js",
+    "require": "./index.cjs",
+    "types": "./index.d.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "build": "node ./src/generate.js",
+    "build": "node ./src/generate.js && npm run buildcjs",
+    "buildcjs": "rollup index.js --file index.cjs --format cjs",
     "prepare": "npm run build"
   },
   "repository": {
@@ -34,6 +41,7 @@
     "@vitest/coverage-v8": "^2.1.3",
     "handlebars": "^4.7.8",
     "node_modules-path": "^2.0.8",
+    "rollup": "^4.26.0",
     "vitest": "^2.1.3"
   }
 }
