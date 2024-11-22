@@ -12,7 +12,6 @@ const maxApiDefinitionLocation = Path.resolve(
 );
 // Load our max api types
 const source = fs.readFileSync(maxApiDefinitionLocation, "utf-8");
-
 // Use babel to get out an AST tree of the type description
 // In theory you could also do this with pure TS but this is
 // marginally easier to work with when you only look at dts
@@ -249,15 +248,23 @@ Handlebars.registerHelper("isPostFunction", Helpers.isPostFunction);
 Handlebars.registerHelper("testParamResolver", Helpers.testParamResolver);
 
 //Now we need to actually do the rendering
+
 const template = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/index.hbs", "utf8"));
 const render = template(filteredTemplateData);
 try {
-  fs.writeFileSync("./index.js", render);
+  fs.writeFileSync("./index.cjs", render);
 } catch (err) {
   console.error(err);
 }
 
-console.log("generated index.js");
+filteredTemplateData.esm = true;
+const esmrender = template(filteredTemplateData);
+try {
+  fs.writeFileSync("./index.js", esmrender);
+} catch (err) {
+  console.error(err);
+}
+
 
 const tests = Handlebars.compile(fs.readFileSync(node_modules()+"/../src/templates/index.test.hbs", "utf8"));
 const rendertests = tests(filteredTemplateData);
@@ -283,3 +290,7 @@ try {
   console.error(err);
 }
 console.log("copied index.d.ts");
+fs.appendFileSync("./index.d.ts", '\nexport = MaxAPIStatic');
+console.log("appended non default export for TS happiness");
+
+console.log("FINISHED");

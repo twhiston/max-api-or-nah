@@ -4,9 +4,10 @@
  * THIS FILE IS AUTO GENERATED. DO NOT EDIT MANUALLY
  */
 
+{{#if esm}}
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-
+{{/if}}
 let Max
 
 const noMax = {
@@ -31,4 +32,8 @@ try {
   process.env.MAX_ENV = "nah"
 }
 
+{{#if esm}}
 export default Max
+{{ else }}
+module.exports = Max
+{{/if}}
